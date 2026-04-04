@@ -7,6 +7,67 @@
     'use strict';
 
     const GAS_URL = 'https://script.google.com/macros/s/AKfycbymRy-M5v0fVLWUjw4IXYhd1oIR2ZvnP_Dzr_iGR-Th0cMIpmE2ntGeujWYH7-C6NHIzA/exec';
+    const SHEET_ID = '1cXlYiTMzcRP1BCj9mt1JXoK_pjgWbRtDEEQUPMg2HPs';
+    const SESSION_KEY = 'icf_sbd_session';
+
+    // ════════════════════════════════════════════════════════
+    //  SESSION PERSISTENCE
+    //  Wraps showLoginScreen (called after CSV loads) so we
+    //  can auto-fill credentials and skip the login screen
+    //  on every page refresh.
+    // ════════════════════════════════════════════════════════
+    (function patchSession() {
+        // 1. Wrap startApp → save session on successful login
+        const origStart = window.startApp;
+        window.startApp = function (displayName, isAdmin) {
+            try {
+                localStorage.setItem(SESSION_KEY, JSON.stringify({
+                    username:    isAdmin ? 'admin' : (window.state?.currentUser || displayName.toLowerCase()),
+                    displayName: displayName,
+                    isAdmin:     !!isAdmin,
+                    ts:          Date.now()
+                }));
+            } catch(e) {}
+            return origStart && origStart.call(this, displayName, isAdmin);
+        };
+
+        // 2. Wrap handleLogout → clear session
+        const origLogout = window.handleLogout;
+        window.handleLogout = function () {
+            try { localStorage.removeItem(SESSION_KEY); } catch(e) {}
+            return origLogout && origLogout.call(this);
+        };
+
+        // 3. Wrap showLoginScreen → auto-login if session exists
+        //    showLoginScreen() is called by init() AFTER the CSV loads,
+        //    so USER_MAP is already populated when we get here.
+        const origShow = window.showLoginScreen;
+        window.showLoginScreen = function () {
+            const sess = _getSession();
+            if (sess) {
+                // Show screen briefly (keeps DOM visible), then auto-login
+                origShow && origShow.call(this);
+                setTimeout(() => {
+                    const uEl = document.getElementById('loginUsername');
+                    const pEl = document.getElementById('loginPassword');
+                    if (uEl) uEl.value = sess.username;
+                    if (pEl) pEl.value = sess.isAdmin ? 'admin123' : '';
+                    window.handleLogin && window.handleLogin();
+                }, 0);
+            } else {
+                origShow && origShow.call(this);
+            }
+        };
+    })();
+
+    function _getSession() {
+        try {
+            const s = JSON.parse(localStorage.getItem(SESSION_KEY) || 'null');
+            // Sessions valid for 30 days
+            if (s && s.username && (Date.now() - (s.ts || 0)) < 30 * 24 * 3600 * 1000) return s;
+        } catch(e) {}
+        return null;
+    }
 
     // ════════════════════════════════════════════════════════
     //  STYLES
@@ -201,16 +262,44 @@
     }
 
     async function fetchSheetData(){
-        // Fetches all submissions from the Google Sheet via GAS
+        // ── Method 1: GAS ?action=getData ──────────────────────
+        // Add this to your Apps Script doGet(e):
+        //  if(e.parameter.action==='getData'){
+        //    const sh=SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
+        //    const vals=sh.getDataRange().getValues();
+        //    const hdr=vals[0];
+        //    const rows=vals.slice(1).map(r=>{const o={};hdr.forEach((h,i)=>o[h]=r[i]);return o;});
+        //    return ContentService.createTextOutput(JSON.stringify({success:true,rows:rows}))
+        //      .setMimeType(ContentService.MimeType.JSON);
+        //  }
         try{
-            const res=await fetch(GAS_URL+'?action=getData');
-            if(!res.ok)throw new Error('HTTP '+res.status);
-            const d=await res.json();
-            if(d.rows&&Array.isArray(d.rows))return d.rows;
-            if(d.data&&Array.isArray(d.data))return d.data;
-            if(Array.isArray(d))return d;
-        }catch(e){console.warn('[Analysis] GAS fetch failed:',e.message);}
-        return [];
+            const res=await Promise.race([
+                fetch(GAS_URL+'?action=getData'),
+                new Promise((_,rej)=>setTimeout(()=>rej(new Error('timeout')),6000))
+            ]);
+            if(res.ok){
+                const d=await res.json();
+                const rows=d.rows||d.data||(Array.isArray(d)?d:null);
+                if(rows&&rows.length>0){console.log('[Analysis] Loaded',rows.length,'rows from GAS');return rows;}
+            }
+        }catch(e){console.warn('[Analysis] GAS getData:',e.message);}
+
+        // ── Method 2: Direct Google Sheets CSV export ──────────
+        // Works when sheet is shared "Anyone with the link can view"
+        try{
+            const csvUrl=`https://docs.google.com/spreadsheets/d/${SHEET_ID}/export?format=csv`;
+            const rows=await new Promise((resolve,reject)=>{
+                Papa.parse(csvUrl,{
+                    download:true,header:true,skipEmptyLines:true,
+                    complete:r=>resolve(r.data||[]),
+                    error:reject
+                });
+            });
+            if(rows&&rows.length>0){console.log('[Analysis] Loaded',rows.length,'rows from CSV export');return rows;}
+        }catch(e){console.warn('[Analysis] CSV export:',e.message);}
+
+        console.warn('[Analysis] Sheet fetch failed — using localStorage data only');
+        return[];
     }
 
     async function fetchCount(){
@@ -527,15 +616,31 @@
         modal.classList.add('show');
         initDistrictFilter();
 
-        // Show loading
         const body=document.getElementById('analysisBody');
-        if(body)body.innerHTML=`<div class="an-loading"><div class="an-spinner"></div><div class="an-load-txt">Fetching data from Google Sheets…</div></div>`;
         const sub=document.getElementById('anSubtitle');
+        if(body)body.innerHTML=`<div class="an-loading"><div class="an-spinner"></div><div class="an-load-txt">Fetching data from Google Sheets…</div></div>`;
         if(sub)sub.textContent='Loading…';
 
-        // Fetch from GAS then render
         const sheetRows=await fetchSheetData();
         _sheetRows=sheetRows;
+
+        // If no sheet rows, show setup tip
+        if(sheetRows.length===0&&getLocalRows().length===0){
+            if(body)body.innerHTML=`
+              <div class="an-no-data">
+                <svg viewBox="0 0 24 24" fill="none" stroke-width="1.5"><path d="M3 3h18v18H3zM3 9h18M9 21V9"/></svg>
+                <div style="font-size:14px;font-weight:600;color:#004080;margin-bottom:8px;">No data found</div>
+                <div style="font-size:12px;color:#607080;max-width:420px;line-height:1.7;">
+                  No submissions in session yet.<br>
+                  To load data from Google Sheets, add a <code>getData</code> action to your Apps Script 
+                  <em>doGet()</em> function — see the comment in <strong>ai_agent.js</strong> for the exact code.
+                  <br><br>Alternatively, share the sheet as "Anyone with the link can view" to enable direct CSV export.
+                </div>
+              </div>`;
+            if(sub)sub.textContent='No data available';
+            return;
+        }
+
         runAnalysis(sheetRows);
     };
 
