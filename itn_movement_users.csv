@@ -1,0 +1,11 @@
+username,full_name,role,district,staff_id,vehicle,phone
+DMS-PL-01,Mohamed Kamara,DMS Staff,Port Loko,SL-DMS-PL-01,,076111222
+DMS-PL-02,Fatima Koroma,DMS Staff,Port Loko,SL-DMS-PL-02,,076111223
+DMS-BN-01,Ibrahim Bangura,DMS Staff,Bonthe,SL-DMS-BN-01,,076444101
+DMS-KD-01,Mariama Sesay,DMS Staff,Koinadugu,SL-DMS-KD-01,,076444102
+DMS-PJ-01,Alhaji Conteh,DMS Staff,Pujehun,SL-DMS-PJ-01,,076444103
+DRV-PL-01,Abdul Conteh,Driver,Port Loko,,ABC-123,076123456
+DRV-PL-02,Lansana Turay,Driver,Port Loko,,DEF-456,076123457
+DRV-BN-01,Sorie Kamara,Driver,Bonthe,,GHI-789,076234567
+DRV-KD-01,Aminata Kanu,Driver,Koinadugu,,JKL-012,076345678
+DRV-PJ-01,Bockarie Koroma,Driver,Pujehun,,MNO-345,076456789
