@@ -309,6 +309,8 @@
     //  DATA MERGE  (GAS sheet + localStorage)
     // ════════════════════════════════════════════════════════
     let _sheetRows = [];   // cached from last GAS fetch
+    let _refreshInterval = null;  // auto-refresh timer
+    let _refreshCountdown = 60;   // seconds until next refresh
 
     function getLocalRows(){
         const s=window.state||{};
@@ -952,7 +954,7 @@
         const modal=document.getElementById('analysisModal');
         if(!modal)return;
         modal.classList.add('show');
-        switchAnTab('analysis');   // default to analysis tab
+        switchAnTab('analysis');
         initDistrictFilter();
 
         const body=document.getElementById('analysisBody');
@@ -960,29 +962,70 @@
         if(body)body.innerHTML=`<div class="an-loading"><div class="an-spinner"></div><div class="an-load-txt">Fetching data from ICF-SL Server…</div></div>`;
         if(sub)sub.textContent='Loading…';
 
-        // Fetch submissions; targets come from the CSV already in memory
         const sheetRows = await fetchSheetData();
         _sheetRows = sheetRows;
         window._TARGETS = buildTargetsFromCSV();
-
         runAnalysis(sheetRows);
+
+        // ── Start auto-refresh every 60s while modal is open ──
+        startAutoRefresh();
     };
 
     window.closeAnalysisModal=function(){
+        stopAutoRefresh();
         destroyCharts();
         document.getElementById('analysisModal')?.classList.remove('show');
     };
 
-    window.anRefresh=async function(){
+    // ── AUTO REFRESH ─────────────────────────────────────────
+    function startAutoRefresh(){
+        stopAutoRefresh();  // clear any existing
+        _refreshCountdown = 60;
+        updateRefreshBtn();
+        _refreshInterval = setInterval(async () => {
+            _refreshCountdown--;
+            updateRefreshBtn();
+            if(_refreshCountdown <= 0){
+                _refreshCountdown = 60;
+                // Silently refresh data in background
+                const rows = await fetchSheetData();
+                _sheetRows = rows;
+                window._TARGETS = buildTargetsFromCSV();
+                runAnalysis(rows);
+                const tBody = document.getElementById('targetsBody');
+                if(tBody && tBody.style.display !== 'none') renderTargetsTab();
+                console.log('[Analysis] Auto-refreshed at', new Date().toLocaleTimeString());
+            }
+        }, 1000);
+    }
+
+    function stopAutoRefresh(){
+        if(_refreshInterval){ clearInterval(_refreshInterval); _refreshInterval = null; }
+    }
+
+    function updateRefreshBtn(){
+        const btn = document.getElementById('anRefreshBtn');
+        if(!btn) return;
+        if(_refreshCountdown <= 0){
+            btn.textContent = '↻ Refreshing…';
+            btn.style.opacity = '0.6';
+        } else {
+            btn.textContent = `↻ REFRESH (${_refreshCountdown}s)`;
+            btn.style.opacity = '1';
+        }
+    }
+
+    window.anRefresh = async function(){
         const body=document.getElementById('analysisBody');
         if(body)body.innerHTML=`<div class="an-loading"><div class="an-spinner"></div><div class="an-load-txt">Refreshing from ICF-SL Server…</div></div>`;
+        _refreshCountdown = 60;
+        updateRefreshBtn();
         const rows = await fetchSheetData();
         _sheetRows = rows;
         window._TARGETS = buildTargetsFromCSV();
         runAnalysis(rows);
-        // Also re-render targets if that panel is visible
         const tBody = document.getElementById('targetsBody');
-        if (tBody && tBody.style.display !== 'none') renderTargetsTab();
+        if(tBody && tBody.style.display !== 'none') renderTargetsTab();
     };
 
     // ════════════════════════════════════════════════════════
