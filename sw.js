@@ -132,6 +132,12 @@ self.addEventListener('activate', event => {
         })
       ))
       .then(() => self.clients.claim())
+      .then(() => {
+        // Tell all open tabs to clear draft/form state on update
+        self.clients.matchAll({ type: 'window' }).then(clients => {
+          clients.forEach(client => client.postMessage({ type: 'CLEAR_DRAFT' }));
+        });
+      })
   );
 });
 
