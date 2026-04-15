@@ -209,12 +209,8 @@
 <div class="tabs-container">
     <div class="tab-bar">
         <button class="tab-btn signin active" onclick="switchTab('signin')">
-            <svg viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="M15 3h4a2 2 0 012 2v14a2 2 0 01-2 2h-4"/><polyline points="10 17 15 12 10 7"/><line x1="15" y1="12" x2="3" y2="12"/></svg>
-            SIGN IN
-        </button>
-        <button class="tab-btn signout" onclick="switchTab('signout')">
-            <svg viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
-            SIGN OUT
+            <svg viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/></svg>
+            ATTENDANCE
         </button>
         <button class="tab-btn stats" onclick="switchTab('stats')">
             <svg viewBox="0 0 24 24" fill="none" stroke-width="2"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
@@ -234,6 +230,7 @@
                 <div style="font-family:'Bebas Neue',sans-serif;font-size:11px;letter-spacing:2px;color:rgba(255,255,255,.5);margin-bottom:6px;">LOGGED IN AS</div>
                 <div style="font-family:'Bebas Neue',sans-serif;font-size:26px;color:var(--gold);letter-spacing:2px;" id="session-name">—</div>
                 <div style="font-size:12px;color:rgba(255,255,255,.65);margin-top:4px;" id="session-meta">—</div>
+                <div style="margin-top:8px;display:flex;gap:8px;justify-content:center;" id="session-status"></div>
             </div>
             <div style="padding:14px 16px;display:grid;grid-template-columns:1fr 1fr;gap:10px;">
                 <button onclick="doSignIn()" id="btn-signin"
@@ -250,7 +247,7 @@
             <div style="padding:0 16px 14px;text-align:center;">
                 <button onclick="clearSession()"
                     style="background:none;border:1px solid #ddd;border-radius:8px;padding:6px 16px;font-family:'Bebas Neue',sans-serif;font-size:12px;letter-spacing:1px;color:#aaa;cursor:pointer;">
-                    🔄 SCAN DIFFERENT PERSON
+                    ⬅ LOGOUT / SCAN DIFFERENT PERSON
                 </button>
             </div>
         </div>
@@ -466,24 +463,39 @@ function showSessionCard(data) {
 }
 
 function updateSessionButtons(data) {
-    var today    = getToday();
-    var code     = (data || sessionUser || {}).code;
-    var btnIn    = document.getElementById('btn-signin');
-    var btnOut   = document.getElementById('btn-signout');
-    var doneIn   = signIns.find(function(s){ return s.code === code && s.date === today; });
-    var doneOut  = signOuts.find(function(s){ return s.code === code && s.date === today; });
+    var today   = getToday();
+    var code    = (data || sessionUser || {}).code;
+    var btnIn   = document.getElementById('btn-signin');
+    var btnOut  = document.getElementById('btn-signout');
+    var statEl  = document.getElementById('session-status');
+    var doneIn  = signIns.find(function(s){ return s.code === code && s.date === today; });
+    var doneOut = signOuts.find(function(s){ return s.code === code && s.date === today; });
 
+    // Update SIGN IN button
     if (btnIn) {
         btnIn.disabled = !!doneIn;
+        btnIn.style.opacity = doneIn ? '0.6' : '1';
         btnIn.innerHTML = doneIn
-            ? '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" width="18" height="18"><polyline points="20 6 9 17 4 12"/></svg> SIGNED IN ' + new Date(doneIn.timestamp).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})
+            ? '✅ SIGNED IN<br><span style="font-size:11px;letter-spacing:0;">' + new Date(doneIn.timestamp).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'}) + '</span>'
             : '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" width="20" height="20"><path d="M15 3h4a2 2 0 012 2v14a2 2 0 01-2 2h-4"/><polyline points="10 17 15 12 10 7"/><line x1="15" y1="12" x2="3" y2="12"/></svg> SIGN IN';
     }
+
+    // Update SIGN OUT button
     if (btnOut) {
         btnOut.disabled = !!doneOut || !doneIn;
+        btnOut.style.opacity = (doneOut || !doneIn) ? '0.6' : '1';
         btnOut.innerHTML = doneOut
-            ? '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" width="18" height="18"><polyline points="20 6 9 17 4 12"/></svg> SIGNED OUT ' + new Date(doneOut.timestamp).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})
+            ? '✅ SIGNED OUT<br><span style="font-size:11px;letter-spacing:0;">' + new Date(doneOut.timestamp).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'}) + '</span>'
             : '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" width="20" height="20"><path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg> SIGN OUT';
+    }
+
+    // Status badges
+    if (statEl) {
+        var badges = '';
+        if (doneIn)  badges += '<span style="background:rgba(40,167,69,.25);color:#6ee7b7;padding:3px 10px;border-radius:10px;font-size:10px;font-weight:700;letter-spacing:1px;">IN ' + new Date(doneIn.timestamp).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'}) + '</span>';
+        if (doneOut) badges += '<span style="background:rgba(255,193,7,.25);color:#fcd34d;padding:3px 10px;border-radius:10px;font-size:10px;font-weight:700;letter-spacing:1px;">OUT ' + new Date(doneOut.timestamp).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'}) + '</span>';
+        if (!doneIn && !doneOut) badges = '<span style="background:rgba(255,255,255,.1);color:rgba(255,255,255,.5);padding:3px 10px;border-radius:10px;font-size:10px;letter-spacing:1px;">No record today</span>';
+        statEl.innerHTML = badges;
     }
 }
 
